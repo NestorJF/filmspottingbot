@@ -18,7 +18,8 @@ class Settings(BaseSettings):
 
     library_dir: Path = Path("library")
     data_dir: Path = Path("data")
-    model: str = "claude-sonnet-5-5"
+    model: str = "claude-opus-5-5"
+    effort: str = "medium"  # low | medium | high | xhigh | max
     ffmpeg: str = Field(default_factory=lambda: _binary("ffmpeg"))
     ffprobe: str = Field(default_factory=lambda: _binary("ffprobe"))
 

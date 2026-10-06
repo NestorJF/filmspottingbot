@@ -1,5 +1,6 @@
 """HTTP API. Run with `filmspotting serve` or `uvicorn filmspotting.api.main:app`."""
 
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -58,3 +59,43 @@ def get_output(name: str) -> FileResponse:
     if path.parent != outputs or not path.is_file():
         raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(path)
+
+
+class ChatRequest(BaseModel):
+    message: str
+    thread_id: str | None = None
+
+
+class ResumeRequest(BaseModel):
+    answer: str
+
+
+class ChatResponse(BaseModel):
+    thread_id: str
+    reply: str
+    files: list[str]
+    question: str | None = None
+    options: list[str] = []
+
+
+def _chat_response(reply) -> ChatResponse:
+    return ChatResponse(
+        thread_id=reply.thread_id, reply=reply.reply, question=reply.question, options=reply.options,
+        files=[f"/outputs/{Path(f).name}" for f in reply.files],
+    )
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(body: ChatRequest) -> ChatResponse:
+    """Natural language request. Reuse `thread_id` for follow-ups ("ahora en vertical")."""
+    from filmspotting.agent import graph
+
+    return _chat_response(graph.chat(body.message, body.thread_id or uuid.uuid4().hex))
+
+
+@app.post("/chat/{thread_id}/resume", response_model=ChatResponse)
+def resume_chat(thread_id: str, body: ResumeRequest) -> ChatResponse:
+    """Answer a question the agent asked (when a /chat response has `question` set)."""
+    from filmspotting.agent import graph
+
+    return _chat_response(graph.resume(body.answer, thread_id))

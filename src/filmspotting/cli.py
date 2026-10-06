@@ -59,6 +59,29 @@ def search(ctx: typer.Context):
 
 
 @app.command()
+def ask(message: str = typer.Argument(..., help="Petición en lenguaje natural")):
+    """Pide algo en lenguaje natural (usa Claude vía LangGraph). Conversación interactiva."""
+    import uuid
+
+    from filmspotting.agent.graph import chat, resume
+
+    reply = chat(message, uuid.uuid4().hex)
+    while True:
+        for path in reply.files:
+            typer.echo(f"  → {path}")
+        if reply.question is None:
+            typer.secho(reply.reply, fg=typer.colors.GREEN)
+            return
+        typer.secho(reply.question, fg=typer.colors.YELLOW)
+        for i, option in enumerate(reply.options, 1):
+            typer.echo(f"  {i}. {option}")
+        answer = typer.prompt(">")
+        if answer.isdigit() and 0 < int(answer) <= len(reply.options):
+            answer = reply.options[int(answer) - 1]
+        reply = resume(answer, reply.thread_id)
+
+
+@app.command()
 def scan(library: Path = typer.Argument(None, help="Carpeta de la biblioteca (por defecto FILMSPOTTING_LIBRARY_DIR)")):
     """Indexa la biblioteca de vídeos y sus subtítulos."""
     from filmspotting.library.scanner import scan as scan_library
