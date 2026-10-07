@@ -49,13 +49,26 @@ Formato de fuente: `"Título [SxxEyy][@timestamp|@frase]"` o `"#<id>@..."`. Opci
 | POST | `/library/scan` | Re-indexar |
 | GET | `/outputs/{name}` | Descarga del resultado |
 
+## LLM local y gratuito (Ollama)
+
+La CLI y `/command` no necesitan ningún LLM. Para usar lenguaje natural sin clave de API, usa [Ollama](https://ollama.com):
+
+```bash
+brew install ollama && ollama serve        # o la app de escritorio de Ollama
+ollama pull qwen2.5:7b                     # ~4,7 GB, necesita ~8 GB de RAM
+uv sync --extra ollama
+FILMSPOTTING_PROVIDER=ollama uv run filmspotting ask "frame de Akira en el 40:10, cuadrado"
+```
+
+Cambia el modelo con `FILMSPOTTING_OLLAMA_MODEL` (cualquiera con llamada a herramientas, p. ej. `llama3.1:8b`, `qwen2.5:14b`). Los modelos locales pequeños eligen herramientas y argumentos peor que Claude; compáralos con la evaluación de LangSmith.
+
 ## Calidad de imagen
 
 Seek preciso y PNG sin pérdida; elige el fotograma más nítido (varianza del Laplaciano) dentro del mismo plano alrededor del timestamp; desentrelazado `bwdif`; matriz de color correcta (BT.709/601) y conversión de croma de alta precisión; corrección de píxel anamórfico; tonemapping HDR→SDR (`zscale`+`hable`); subtítulos `.ass` con libass conservando estilos.
 
 ## IA
 
-- **LangChain**: `ChatAnthropic` (`claude-opus-5-5` por defecto, `FILMSPOTTING_MODEL` / `FILMSPOTTING_EFFORT`) con tools cuyo esquema son los mismos modelos Pydantic de la CLI. Fallback de rechazos del lado del servidor activado.
+- **LangChain**: `ChatAnthropic` por defecto (`claude-opus-5-5`, configurable con `FILMSPOTTING_MODEL` / `FILMSPOTTING_EFFORT`, con fallback de rechazos del lado del servidor) o `ChatOllama` con `FILMSPOTTING_PROVIDER=ollama`. El esquema de las tools son los mismos modelos Pydantic de la CLI.
 - **LangGraph**: bucle agente↔tools, `ask_user` con `interrupt()` para desambiguar, checkpointer SQLite para seguimientos ("ahora sin subtítulos").
 - **LangSmith**: con `LANGSMITH_TRACING=true` y `LANGSMITH_API_KEY` todo `/chat` queda trazado. `uv run python evals/langsmith_dataset.py` crea el dataset NL→comando y lanza la evaluación (hace una llamada a Claude por ejemplo).
 

@@ -49,13 +49,26 @@ Source format: `"Title [SxxEyy][@timestamp|@quote]"` or `"#<id>@..."`. Style opt
 | POST | `/library/scan` | Re-index the library |
 | GET | `/outputs/{name}` | Download a result |
 
+## Free local LLM (Ollama)
+
+The CLI and `/command` need no LLM at all. For natural language without an API key, use [Ollama](https://ollama.com):
+
+```bash
+brew install ollama && ollama serve        # or the Ollama desktop app
+ollama pull qwen2.5:7b                     # ~4.7 GB, needs ~8 GB of RAM
+uv sync --extra ollama
+FILMSPOTTING_PROVIDER=ollama uv run filmspotting ask "frame from Akira at 40:10, square"
+```
+
+Change the model with `FILMSPOTTING_OLLAMA_MODEL` (any model with tool calling, e.g. `llama3.1:8b`, `qwen2.5:14b`). Small local models pick tools and arguments less reliably than Claude; compare them with the LangSmith eval below.
+
 ## Image quality
 
 Accurate seeking and lossless PNG output; picks the sharpest frame (variance of the Laplacian) within the same shot around the timestamp; `bwdif` deinterlacing; correct color matrix (BT.709/601) and high-precision chroma conversion; anamorphic pixel correction; HDR→SDR tonemapping (`zscale` + `hable`); `.ass` subtitles rendered with libass, keeping their styling.
 
 ## AI
 
-- **LangChain**: `ChatAnthropic` (`claude-opus-5-5` by default, `FILMSPOTTING_MODEL` / `FILMSPOTTING_EFFORT`) with tools whose schemas are the same Pydantic models the CLI uses. Server-side refusal fallback is enabled.
+- **LangChain**: `ChatAnthropic` by default (`claude-opus-5-5`, set with `FILMSPOTTING_MODEL` / `FILMSPOTTING_EFFORT`, server-side refusal fallback enabled) or `ChatOllama` with `FILMSPOTTING_PROVIDER=ollama`. Tool schemas are the same Pydantic models the CLI uses.
 - **LangGraph**: agent↔tools loop, `ask_user` with `interrupt()` to resolve ambiguity, and a SQLite checkpointer for follow-ups ("now without subtitles").
 - **LangSmith**: with `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, every `/chat` request is traced. `uv run python evals/langsmith_dataset.py` creates the natural-language→command dataset and runs the evaluation (one Claude call per example).
 

@@ -21,6 +21,9 @@ dependencies = [
     "langsmith>=0.1",
 ]
 
+[project.optional-dependencies]
+ollama = ["langchain-ollama>=0.3"]
+
 [project.scripts]
 filmspotting = "filmspotting.cli:app"
 

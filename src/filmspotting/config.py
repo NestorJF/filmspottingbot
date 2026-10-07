@@ -18,8 +18,11 @@ class Settings(BaseSettings):
 
     library_dir: Path = Path("library")
     data_dir: Path = Path("data")
+    provider: str = "anthropic"  # anthropic | ollama
     model: str = "claude-opus-5-5"
-    effort: str = "medium"  # low | medium | high | xhigh | max
+    effort: str = "medium"  # low | medium | high | xhigh | max (Anthropic only)
+    ollama_model: str = "qwen2.5:7b"
+    ollama_base_url: str = "http://localhost:11434"
     ffmpeg: str = Field(default_factory=lambda: _binary("ffmpeg"))
     ffprobe: str = Field(default_factory=lambda: _binary("ffprobe"))
 

@@ -54,3 +54,28 @@ def test_tool_errors_are_reported_to_the_model(library):
     state = graph.get_state({"configurable": {"thread_id": "t3"}})
     tool_msg = state.values["messages"][2]
     assert '"ok":false' in tool_msg.content and "No encontré" in tool_msg.content
+
+
+def test_provider_selection(settings, monkeypatch):
+    import pytest
+    from langchain_anthropic import ChatAnthropic
+    from langchain_ollama import ChatOllama
+
+    from filmspotting.agent.graph import default_model
+    from filmspotting.config import get_settings
+
+    def model_for(provider):
+        monkeypatch.setenv("FILMSPOTTING_PROVIDER", provider)
+        get_settings.cache_clear()
+        return default_model()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    try:
+        assert isinstance(model_for("anthropic"), ChatAnthropic)
+        ollama = model_for("ollama")
+        assert isinstance(ollama, ChatOllama) and ollama.model == "qwen2.5:7b"
+        with pytest.raises(ValueError):
+            model_for("gpt")
+    finally:
+        monkeypatch.delenv("FILMSPOTTING_PROVIDER")
+        get_settings.cache_clear()

@@ -25,6 +25,14 @@ from filmspotting.config import get_settings
 
 def default_model() -> BaseChatModel:
     settings = get_settings()
+    if settings.provider == "ollama":
+        try:
+            from langchain_ollama import ChatOllama
+        except ImportError as exc:
+            raise RuntimeError("Ollama support is not installed: run `uv sync --extra ollama`") from exc
+        return ChatOllama(model=settings.ollama_model, base_url=settings.ollama_base_url, temperature=0)
+    if settings.provider != "anthropic":
+        raise ValueError(f"Unknown FILMSPOTTING_PROVIDER {settings.provider!r} (use 'anthropic' or 'ollama')")
     return ChatAnthropic(
         model=settings.model,
         max_tokens=16000,
