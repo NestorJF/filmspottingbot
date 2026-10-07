@@ -79,3 +79,11 @@ def test_provider_selection(settings, monkeypatch):
     finally:
         monkeypatch.delenv("FILMSPOTTING_PROVIDER")
         get_settings.cache_clear()
+
+
+def test_command_tools_hide_action_field():
+    from filmspotting.agent.tools import compare_frames, render_clip, render_frame
+
+    for t in (render_frame, compare_frames, render_clip):
+        assert "action" not in t.args
+    assert {"sources", "layout"} <= set(compare_frames.args)

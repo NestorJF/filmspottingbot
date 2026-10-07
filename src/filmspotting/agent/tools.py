@@ -4,6 +4,7 @@ from typing import Literal
 
 from langchain_core.tools import StructuredTool, tool
 from langgraph.types import interrupt
+from pydantic import create_model
 
 from filmspotting.commands.executor import execute
 from filmspotting.commands.schemas import ClipCommand, CommandResult, CompareCommand, FrameCommand, SearchCommand
@@ -26,11 +27,17 @@ def search_library(
 
 
 def _command_tool(model, name: str, description: str) -> StructuredTool:
+    # The tool name already picks the command, so hide the `action` discriminator from the model:
+    # small models tend to fill it with made-up values that fail validation.
+    fields = {n: (f.annotation, f) for n, f in model.model_fields.items() if n != "action"}
+    args_schema = create_model(f"{model.__name__}Args", __doc__=model.__doc__, **fields)
+
     def run(**kwargs) -> tuple[str, list[str]]:
         return _report(execute(model(**kwargs)))
 
     return StructuredTool.from_function(
-        func=run, name=name, description=description, args_schema=model, response_format="content_and_artifact",
+        func=run, name=name, description=description, args_schema=args_schema,
+        response_format="content_and_artifact",
     )
 
 
