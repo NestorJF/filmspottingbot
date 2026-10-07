@@ -27,7 +27,7 @@ def test_bad_command_is_422(library):
 
 def test_search_quotes(library):
     res = client.get("/media/search", params={"q": "tren", "quotes": True})
-    assert res.json()["candidates"][0]["text"] == "El tren llega tarde."
+    assert res.json()["candidates"][0]["text"] == "El tren llega tarde otra vez, como todos los días de la semana."
 
 
 def test_outputs_blocks_path_traversal(library):

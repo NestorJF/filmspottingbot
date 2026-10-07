@@ -78,23 +78,36 @@ def _resolve_media(source: FrameSource) -> Media | None:
     return exact[0] if exact else matches[0]
 
 
-def _still(moment: Moment, best: bool, subtitle_lang: str | None) -> Image.Image:
+def _still(moment: Moment, best: bool, style: Style) -> Image.Image:
+    """Extract the frame, reframe it, then burn subtitles so a crop never cuts the text."""
     frame = extract_frame(Path(moment.media.path), moment.timestamp, best=best)
+    image = frame.image
+    if style.aspect:
+        image = formats.change_aspect(image, style.aspect, style.aspect_mode)
+    subtitle_lang = style.subtitles
     if subtitle_lang:
         track = find_track(moment.media.id, None if subtitle_lang == "auto" else subtitle_lang)
         if track is None:
             raise ResolutionError(f"{moment.media.label} no tiene subtítulos en «{subtitle_lang}».")
-        return subtitles.render_track(frame.image, Path(track.path), frame.timestamp)
-    return frame.image
+        return subtitles.render_track(image, Path(track.path), frame.timestamp)
+    return image
 
 
 def _finish(image: Image.Image, style: Style) -> Path:
+    """Caption, resize and save. The aspect ratio is already applied by _still()."""
     if style.caption:
         image = subtitles.render_text(image, style.caption, style.caption_position)
-    if style.aspect:
-        image = formats.change_aspect(image, style.aspect, style.aspect_mode)
     image = formats.resize(image, style.width)
     return formats.save(image, _output_path(), style.format)
+
+
+def _labels(moments: list[Moment]) -> list[str]:
+    """Panel labels; add the timestamp when the same title appears more than once."""
+    titles = [m.media.label for m in moments]
+    return [
+        f"{t} @ {_fmt_time(m.timestamp)[:8]}" if titles.count(t) > 1 else t
+        for t, m in zip(titles, moments, strict=True)
+    ]
 
 
 def _output_path(suffix: str = "") -> Path:
@@ -112,18 +125,16 @@ def execute(command: Command) -> CommandResult:
         match command:
             case FrameCommand():
                 moment = resolve(command.source)
-                path = _finish(_still(moment, command.best, command.subtitles), command)
+                path = _finish(_still(moment, command.best, command), command)
                 return CommandResult(
                     message=f"{moment.media.label} @ {_fmt_time(moment.timestamp)}", files=[str(path)]
                 )
             case CompareCommand():
                 moments = [resolve(s) for s in command.sources]
-                images = [_still(m, True, command.subtitles) for m in moments]
-                labels = [m.media.label for m in moments] if command.labels else None
-                if command.aspect:  # apply the aspect per panel so the panels match
-                    images = [formats.change_aspect(i, command.aspect, command.aspect_mode) for i in images]
+                images = [_still(m, True, command) for m in moments]  # aspect applies per panel
+                labels = _labels(moments) if command.labels else None
                 combined = compose.stack(images, command.layout, labels)
-                path = _finish(combined, command.model_copy(update={"aspect": None}))
+                path = _finish(combined, command)
                 return CommandResult(
                     message=" | ".join(f"{m.media.label} @ {_fmt_time(m.timestamp)}" for m in moments),
                     files=[str(path)],

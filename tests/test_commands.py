@@ -62,3 +62,29 @@ def test_cli_end_to_end(library):
     result = CliRunner().invoke(app, ["frame", "Sample Movie@00:00:01", "--format", "jpg"])
     assert result.exit_code == 0, result.output
     assert ".jpg" in result.output
+
+
+def test_subtitles_survive_vertical_crop(library):
+    """Subtitles are burned after reframing, so a 9:16 crop must not cut the text off."""
+    import numpy as np
+
+    result = execute(parse('frame "Sample Movie" --quote "tren llega" --subs es --aspect 9:16 --exact'))
+    assert result.ok, result.message
+    with Image.open(result.files[0]) as img:
+        assert img.size == (202, 360)
+        rows = np.asarray(img.convert("RGB"))[int(img.height * 0.8):]
+    # The second shot is solid red; subtitle pixels are white/black. None of them may touch the side edges.
+    def is_text(px):
+        return (px.min(axis=-1) > 200) | (px.max(axis=-1) < 50)
+    assert is_text(rows).any()
+    assert not is_text(rows[:, :2]).any() and not is_text(rows[:, -2:]).any()
+
+
+def test_compare_labels_add_timestamp_for_same_title(library):
+    from filmspotting.commands.executor import Moment, _labels
+    from filmspotting.library.search import search_media
+
+    [media] = search_media("sample")
+    assert _labels([Moment(media, 1.0), Moment(media, 3.5)]) == [
+        "Sample Movie (2020) @ 00:00:01", "Sample Movie (2020) @ 00:00:03",
+    ]

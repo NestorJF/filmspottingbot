@@ -31,7 +31,7 @@ def library(settings) -> Path:
     )
     (movie_dir / "Sample.Movie.2020.1080p.es.srt").write_text(
         "1\n00:00:00,500 --> 00:00:01,500\nHola, ¿cómo estás?\n\n"
-        "2\n00:00:02,500 --> 00:00:03,500\nEl tren llega tarde.\n",
+        "2\n00:00:02,500 --> 00:00:03,500\nEl tren llega tarde otra vez, como todos los días de la semana.\n",
         encoding="utf-8",
     )
     from filmspotting.library.scanner import scan
