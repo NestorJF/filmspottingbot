@@ -1,7 +1,7 @@
 [project]
 name = "filmspotting"
 version = "0.1.0"
-description = "Bot para extraer y editar fotogramas de películas, series y anime"
+description = "Extract artifact-free stills from movies, series and anime, with subtitles, reframing, comparisons and clips"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
