@@ -11,6 +11,7 @@ from guessit import guessit
 from filmspotting.config import get_settings
 from filmspotting.core.ffmpeg import FFmpegError, ffmpeg, probe
 from filmspotting.library.db import connect
+from filmspotting.library.languages import normalize_language
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ def _index_track(conn, media_id: int, path: Path, language: str | None, stream_i
         return
     track_id = conn.execute(
         "INSERT INTO subtitle_tracks (media_id, language, format, path, stream_index) VALUES (?, ?, ?, ?, ?)",
-        (media_id, language, path.suffix.lstrip(".").lower(), str(path), stream_index),
+        (media_id, normalize_language(language), path.suffix.lstrip(".").lower(), str(path), stream_index),
     ).lastrowid
     rows = [
         (clean_text(event.text), media_id, track_id, event.start, event.end)

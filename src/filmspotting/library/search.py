@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from filmspotting.library.db import connect
+from filmspotting.library.languages import normalize_language
 
 
 class Media(BaseModel):
@@ -102,11 +103,8 @@ def find_track(media_id: int, language: str | None, db_path: Path | None = None)
     if not tracks:
         return None
     if language:
-        lang = language.lower()
-        for track in tracks:
-            if track.language and track.language.lower().startswith(lang[:2]):
-                return track
-        return None
+        wanted = normalize_language(language)
+        return next((t for t in tracks if normalize_language(t.language) == wanted), None)
     return tracks[0]
 
 
@@ -134,11 +132,13 @@ def search_quote(
         sql += " AND l.media_id = ?"
         params.append(media_id)
     if language:
-        sql += " AND t.language LIKE ?"
-        params.append(f"{language[:2]}%")
+        # Normalized in SQL too, so libraries indexed before codes were normalized still match.
+        sql += " AND normalize_language(t.language) = ?"
+        params.append(normalize_language(language))
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
     with connect(db_path) as conn:
+        conn.create_function("normalize_language", 1, normalize_language, deterministic=True)
         rows = conn.execute(sql, params).fetchall()
     hits = []
     for row in rows:

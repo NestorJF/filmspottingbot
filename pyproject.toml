@@ -13,6 +13,7 @@ dependencies = [
     "pillow>=10.4",
     "opencv-python-headless>=4.10",
     "numpy>=1.26",
+    "babelfish>=0.6",
     "guessit>=3.8",
     "langchain-anthropic>=0.3",
     "langchain-core>=0.3",

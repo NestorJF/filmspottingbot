@@ -287,6 +287,7 @@ name = "filmspotting"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "babelfish" },
     { name = "fastapi" },
     { name = "guessit" },
     { name = "langchain-anthropic" },
@@ -319,6 +320,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "babelfish", specifier = ">=0.6" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "guessit", specifier = ">=3.8" },
     { name = "langchain-anthropic", specifier = ">=0.3" },
