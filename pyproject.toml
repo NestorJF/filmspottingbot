@@ -17,6 +17,7 @@ dependencies = [
     "guessit>=3.8",
     "langchain-anthropic>=0.3",
     "langchain-core>=0.3",
+    "langchain-google-genai>=4.5",
     "langgraph>=0.2",
     "langgraph-checkpoint-sqlite>=2.0",
     "langsmith>=0.1",

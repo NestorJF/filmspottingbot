@@ -49,6 +49,34 @@ Formato de fuente: `"Título [SxxEyy][@timestamp|@frase]"` o `"#<id>@..."`. Opci
 | POST | `/library/scan` | Re-indexar |
 | GET | `/outputs/{name}` | Descarga del resultado |
 
+## Gemini (Google AI Studio o Vertex AI)
+
+```bash
+# API de Gemini (clave de AI Studio)
+FILMSPOTTING_PROVIDER=google GOOGLE_API_KEY=... uv run filmspotting ask "frame de Akira en el 40:10, cuadrado"
+
+# Vertex AI (Application Default Credentials)
+gcloud auth application-default login
+FILMSPOTTING_PROVIDER=google FILMSPOTTING_GOOGLE_VERTEXAI=true FILMSPOTTING_GOOGLE_PROJECT=mi-proyecto \
+  uv run filmspotting ask "frame de Akira en el 40:10, cuadrado"
+```
+
+Cambia el modelo con `FILMSPOTTING_GOOGLE_MODEL` (por defecto `gemini-3.5-flash`) y la región de Vertex con `FILMSPOTTING_GOOGLE_LOCATION` (por defecto `global`).
+
+## Despliegue en Cloud Run
+
+`deploy/cloudrun.sh` construye la imagen con Cloud Build (no hace falta Docker local) y despliega la API con Gemini en **Vertex AI**: sin claves de API, la cuenta de servicio solo tiene `roles/aiplatform.user` y lectura del bucket de la biblioteca. Los vídeos viven en un bucket de Cloud Storage montado en `/library` y se indexan al arrancar.
+
+```bash
+gcloud auth login
+PROJECT=mi-proyecto BUCKET=mi-biblioteca-filmspotting deploy/cloudrun.sh
+gcloud storage cp -r ./clips gs://mi-biblioteca-filmspotting/   # luego POST /library/scan
+```
+
+Opcional: `MODEL`, `FALLBACK_MODEL` (modelo Gemini de respaldo ante 503/429), `REGION` (por defecto `us-central1`). Corre con `--max-instances 1`, así que los hilos de conversación (SQLite) quedan en una instancia; se reinician cuando escala a cero.
+
+La demo pública usa fragmentos de *Sintel* y *Big Buck Bunny*, © Blender Foundation, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) ([durian.blender.org](https://durian.blender.org), [peach.blender.org](https://peach.blender.org)).
+
 ## LLM local y gratuito (Ollama)
 
 La CLI y `/command` no necesitan ningún LLM. Para usar lenguaje natural sin clave de API, usa [Ollama](https://ollama.com):
@@ -68,9 +96,9 @@ Seek preciso y PNG sin pérdida; elige el fotograma más nítido (varianza del L
 
 ## IA
 
-- **LangChain**: `ChatAnthropic` por defecto (`claude-opus-5-5`, configurable con `FILMSPOTTING_MODEL` / `FILMSPOTTING_EFFORT`, con fallback de rechazos del lado del servidor) o `ChatOllama` con `FILMSPOTTING_PROVIDER=ollama`. El esquema de las tools son los mismos modelos Pydantic de la CLI.
+- **LangChain**: `ChatAnthropic` por defecto (`claude-opus-5-5`, configurable con `FILMSPOTTING_MODEL` / `FILMSPOTTING_EFFORT`, con fallback de rechazos del lado del servidor) `ChatGoogleGenerativeAI` (API de Gemini o Vertex AI) con `FILMSPOTTING_PROVIDER=google`, o `ChatOllama` con `FILMSPOTTING_PROVIDER=ollama`. El esquema de las tools son los mismos modelos Pydantic de la CLI.
 - **LangGraph**: bucle agente↔tools, `ask_user` con `interrupt()` para desambiguar, checkpointer SQLite para seguimientos ("ahora sin subtítulos").
-- **LangSmith**: con `LANGSMITH_TRACING=true` y `LANGSMITH_API_KEY` todo `/chat` queda trazado. `uv run python evals/langsmith_dataset.py` crea el dataset NL→comando y lanza la evaluación (hace una llamada a Claude por ejemplo).
+- **LangSmith**: con `LANGSMITH_TRACING=true` y `LANGSMITH_API_KEY` todo `/chat` queda trazado. `uv run python evals/langsmith_dataset.py anthropic google ollama` crea el dataset NL→comando, lanza un experimento por proveedor e imprime una tabla comparativa (acierto de herramienta y de argumentos). Sin `LANGSMITH_API_KEY` corre la misma evaluación en local.
 
 ## Tests
 

@@ -1,0 +1,11 @@
+# Never upload secrets or local data to Cloud Build. Leading "/" = project root only
+# (an unanchored "library/" would also drop src/filmspotting/library).
+/.env
+/.venv/
+/data/
+/outputs/
+/library/
+__pycache__/
+*.pyc
+/.pytest_cache/
+/.git/

@@ -1,6 +1,7 @@
 """HTTP API. Run with `filmspotting serve` or `uvicorn filmspotting.api.main:app`."""
 
 import uuid
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -78,6 +79,21 @@ class ChatResponse(BaseModel):
     options: list[str] = []
 
 
+_chat_usage = {"day": date.today(), "count": 0}
+
+
+def _check_chat_quota() -> None:
+    """Cap LLM calls per day; with --max-instances 1 this is a hard ceiling on Gemini spend."""
+    limit = get_settings().chat_daily_limit
+    if not limit:
+        return
+    if _chat_usage["day"] != date.today():
+        _chat_usage.update(day=date.today(), count=0)
+    if _chat_usage["count"] >= limit:
+        raise HTTPException(status_code=429, detail="Daily chat limit reached, try again tomorrow")
+    _chat_usage["count"] += 1
+
+
 def _chat_response(reply) -> ChatResponse:
     return ChatResponse(
         thread_id=reply.thread_id, reply=reply.reply, question=reply.question, options=reply.options,
@@ -90,6 +106,7 @@ def chat(body: ChatRequest) -> ChatResponse:
     """Natural language request. Reuse `thread_id` for follow-ups ("ahora en vertical")."""
     from filmspotting.agent import graph
 
+    _check_chat_quota()
     return _chat_response(graph.chat(body.message, body.thread_id or uuid.uuid4().hex))
 
 
@@ -98,4 +115,5 @@ def resume_chat(thread_id: str, body: ResumeRequest) -> ChatResponse:
     """Answer a question the agent asked (when a /chat response has `question` set)."""
     from filmspotting.agent import graph
 
+    _check_chat_quota()
     return _chat_response(graph.resume(body.answer, thread_id))

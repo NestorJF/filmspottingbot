@@ -12,6 +12,7 @@ from functools import lru_cache
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import Runnable
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, MessagesState, StateGraph
@@ -23,16 +24,31 @@ from filmspotting.agent.tools import TOOLS
 from filmspotting.config import get_settings
 
 
-def default_model() -> BaseChatModel:
+def _gemini(model: str) -> BaseChatModel:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
     settings = get_settings()
-    if settings.provider == "ollama":
+    # Few retries: on an overloaded model, failing over beats burning quota on retries.
+    common = {"model": model, "temperature": 0, "max_retries": 2}
+    if settings.google_vertexai:
+        return ChatGoogleGenerativeAI(
+            **common, vertexai=True, project=settings.google_project, location=settings.google_location)
+    return ChatGoogleGenerativeAI(**common, google_api_key=settings.google_api_key)
+
+
+def default_model(provider: str | None = None) -> BaseChatModel:
+    settings = get_settings()
+    provider = provider or settings.provider
+    if provider == "google":
+        return _gemini(settings.google_model)
+    if provider == "ollama":
         try:
             from langchain_ollama import ChatOllama
         except ImportError as exc:
             raise RuntimeError("Ollama support is not installed: run `uv sync --extra ollama`") from exc
         return ChatOllama(model=settings.ollama_model, base_url=settings.ollama_base_url, temperature=0)
-    if settings.provider != "anthropic":
-        raise ValueError(f"Unknown FILMSPOTTING_PROVIDER {settings.provider!r} (use 'anthropic' or 'ollama')")
+    if provider != "anthropic":
+        raise ValueError(f"Unknown FILMSPOTTING_PROVIDER {provider!r} (use 'anthropic', 'google' or 'ollama')")
     return ChatAnthropic(
         model=settings.model,
         max_tokens=16000,
@@ -43,8 +59,23 @@ def default_model() -> BaseChatModel:
     )
 
 
+def fallback_model(provider: str | None = None) -> BaseChatModel | None:
+    settings = get_settings()
+    if (provider or settings.provider) == "google" and settings.google_fallback_model:
+        return _gemini(settings.google_fallback_model)
+    return None
+
+
+def tool_model(provider: str | None = None) -> Runnable:
+    """The configured model with tools bound, failing over to the fallback model on errors."""
+    llm = default_model(provider).bind_tools(TOOLS)
+    if fallback := fallback_model(provider):
+        llm = llm.with_fallbacks([fallback.bind_tools(TOOLS)])
+    return llm
+
+
 def build_graph(model: BaseChatModel | None = None, checkpointer: BaseCheckpointSaver | None = None):
-    llm = (model or default_model()).bind_tools(TOOLS)
+    llm = model.bind_tools(TOOLS) if model else tool_model()
 
     def agent(state: MessagesState) -> dict:
         return {"messages": [llm.invoke([SystemMessage(SYSTEM_PROMPT), *state["messages"]])]}

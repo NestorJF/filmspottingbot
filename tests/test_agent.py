@@ -59,6 +59,7 @@ def test_tool_errors_are_reported_to_the_model(library):
 def test_provider_selection(settings, monkeypatch):
     import pytest
     from langchain_anthropic import ChatAnthropic
+    from langchain_google_genai import ChatGoogleGenerativeAI
     from langchain_ollama import ChatOllama
 
     from filmspotting.agent.graph import default_model
@@ -70,8 +71,19 @@ def test_provider_selection(settings, monkeypatch):
         return default_model()
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    monkeypatch.setenv("GOOGLE_API_KEY", "test")
     try:
         assert isinstance(model_for("anthropic"), ChatAnthropic)
+        gemini = model_for("google")
+        assert isinstance(gemini, ChatGoogleGenerativeAI) and gemini.model.endswith("gemini-3.5-flash")
+        assert isinstance(default_model("google"), ChatGoogleGenerativeAI)
+        monkeypatch.setenv("FILMSPOTTING_GOOGLE_FALLBACK_MODEL", "gemini-backup")
+        get_settings.cache_clear()
+        from langchain_core.runnables import RunnableWithFallbacks
+
+        from filmspotting.agent.graph import tool_model
+        assert isinstance(tool_model("google"), RunnableWithFallbacks)
+        monkeypatch.delenv("FILMSPOTTING_GOOGLE_FALLBACK_MODEL")
         ollama = model_for("ollama")
         assert isinstance(ollama, ChatOllama) and ollama.model == "qwen2.5:7b"
         with pytest.raises(ValueError):

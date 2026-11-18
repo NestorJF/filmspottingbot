@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Homebrew's plain `ffmpeg` lacks libass and zimg; prefer the keg-only `ffmpeg-full` when installed.
@@ -18,9 +18,18 @@ class Settings(BaseSettings):
 
     library_dir: Path = Path("library")
     data_dir: Path = Path("data")
-    provider: str = "anthropic"  # anthropic | ollama
+    provider: str = "anthropic"  # anthropic | google | ollama
     model: str = "claude-opus-5-5"
     effort: str = "medium"  # low | medium | high | xhigh | max (Anthropic only)
+    google_model: str = "gemini-3.5-flash"
+    google_fallback_model: str | None = None  # used when the primary model errors (503 overload, 429 quota)
+    # Read here because pydantic-settings doesn't export unprefixed .env entries to os.environ.
+    google_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("GOOGLE_API_KEY", "GEMINI_API_KEY"))
+    google_vertexai: bool = False  # True: Vertex AI (ADC + project); False: Gemini API (GOOGLE_API_KEY)
+    google_project: str | None = None
+    google_location: str = "global"
+    chat_daily_limit: int = 0  # max /chat calls per day per instance (caps LLM spend on a public deploy); 0 = no limit
     ollama_model: str = "qwen2.5:7b"
     ollama_base_url: str = "http://localhost:11434"
     ffmpeg: str = Field(default_factory=lambda: _binary("ffmpeg"))

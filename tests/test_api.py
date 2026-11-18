@@ -32,3 +32,20 @@ def test_search_quotes(library):
 
 def test_outputs_blocks_path_traversal(library):
     assert client.get("/outputs/..%2Flibrary.db").status_code == 404
+
+
+def test_chat_daily_limit(settings, monkeypatch):
+    from filmspotting.agent import graph
+    from filmspotting.agent.graph import ChatReply
+    from filmspotting.api import main
+    from filmspotting.config import get_settings
+
+    monkeypatch.setattr(graph, "chat", lambda message, thread_id: ChatReply(thread_id=thread_id, reply="ok"))
+    monkeypatch.setenv("FILMSPOTTING_CHAT_DAILY_LIMIT", "2")
+    monkeypatch.setitem(main._chat_usage, "count", 0)
+    get_settings.cache_clear()
+    try:
+        codes = [client.post("/chat", json={"message": "hola"}).status_code for _ in range(3)]
+        assert codes == [200, 200, 429]
+    finally:
+        get_settings.cache_clear()

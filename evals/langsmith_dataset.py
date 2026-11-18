@@ -1,17 +1,23 @@
 """Evaluate how well the agent turns natural language into the right tool call.
 
 Only the first model step runs (no frames are rendered), so the library doesn't need these titles.
-Requires ANTHROPIC_API_KEY and LANGSMITH_API_KEY. Each run makes one Claude call per example.
+Each run makes one model call per example and provider. With LANGSMITH_API_KEY set, results are
+logged as LangSmith experiments (one per provider); without it, the eval runs locally.
 
-    uv run python evals/langsmith_dataset.py            # create/update dataset and evaluate
+    uv run python evals/langsmith_dataset.py                          # current FILMSPOTTING_PROVIDER
+    uv run python evals/langsmith_dataset.py anthropic google ollama  # compare providers
 """
+
+import os
+import sys
+from functools import partial
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import Client, evaluate
 
-from filmspotting.agent.graph import default_model
+from filmspotting.agent.graph import tool_model
 from filmspotting.agent.prompts import SYSTEM_PROMPT
-from filmspotting.agent.tools import TOOLS
+from filmspotting.config import get_settings
 
 DATASET = "filmspotting-nl-to-command"
 
@@ -44,8 +50,8 @@ def _get(args: dict, dotted: str):
     return args
 
 
-def first_tool_call(inputs: dict) -> dict:
-    llm = default_model().bind_tools(TOOLS)
+def first_tool_call(inputs: dict, provider: str) -> dict:
+    llm = tool_model(provider)
     message = llm.invoke([SystemMessage(SYSTEM_PROMPT), HumanMessage(inputs["request"])])
     call = message.tool_calls[0] if message.tool_calls else {"name": None, "args": {}}
     return {"tool": call["name"], "args": call["args"]}
@@ -79,13 +85,58 @@ def ensure_dataset(client: Client) -> None:
         )
 
 
-if __name__ == "__main__":
-    client = Client()
-    ensure_dataset(client)
-    evaluate(
-        first_tool_call,
+def run_local(provider: str) -> dict[str, float]:
+    """Score only the examples the model answered; API failures are counted separately."""
+    scores = {"correct_tool": 0.0, "correct_args": 0.0}
+    errors = 0
+    for request, tool, args in EXAMPLES:
+        reference = {"tool": tool, "args": args}
+        try:
+            outputs = first_tool_call({"request": request}, provider)
+        except Exception as exc:  # outages and quota errors say nothing about model quality
+            errors += 1
+            print(f"  [{provider}] error on {request!r}: {str(exc)[:200]}", file=sys.stderr)
+            continue
+        scores["correct_tool"] += correct_tool(outputs, reference)
+        scores["correct_args"] += correct_args(outputs, reference)
+    answered = len(EXAMPLES) - errors
+    return {**{k: v / answered if answered else float("nan") for k, v in scores.items()}, "errors": errors}
+
+
+def run_langsmith(client: Client, provider: str) -> dict[str, float]:
+    results = evaluate(
+        partial(first_tool_call, provider=provider),
         data=DATASET,
         evaluators=[correct_tool, correct_args],
-        experiment_prefix="nl-to-command",
+        experiment_prefix=f"nl-to-command-{provider}",
+        metadata={"provider": provider},
         max_concurrency=4,
     )
+    totals: dict[str, list[float]] = {}
+    for row in results:
+        for r in row["evaluation_results"]["results"]:
+            totals.setdefault(r.key, []).append(float(r.score or 0))
+    return {k: sum(v) / len(v) for k, v in totals.items()}
+
+
+def model_name(provider: str) -> str:
+    settings = get_settings()
+    return {"anthropic": settings.model, "google": settings.google_model,
+            "ollama": settings.ollama_model}.get(provider, "?")
+
+
+if __name__ == "__main__":
+    providers = sys.argv[1:] or [get_settings().provider]
+    client = Client() if os.getenv("LANGSMITH_API_KEY") else None
+    if client:
+        ensure_dataset(client)
+    rows = []
+    for provider in providers:
+        scores = run_langsmith(client, provider) if client else run_local(provider)
+        rows.append((provider, model_name(provider), scores["correct_tool"], scores["correct_args"],
+                     scores.get("errors", 0)))
+
+    print(f"\n| Provider | Model | Correct tool | Correct args | API errors |  (n={len(EXAMPLES)})")
+    print("|---|---|---|---|---|")
+    for provider, model, tool, args, errors in rows:
+        print(f"| {provider} | {model} | {tool:.0%} | {args:.0%} | {errors} |")
