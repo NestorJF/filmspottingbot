@@ -2,12 +2,16 @@
 
 [English](README.md) | **Español**
 
-Genera fotogramas de calidad (sin artefactos) de tu biblioteca local de películas, series y anime: con subtítulos, cambios de formato, comparativas entre escenas/películas y GIF/MP4 cortos. Se usa por **comandos tipo CLI** o en **lenguaje natural** (Claude vía LangChain + LangGraph, trazado con LangSmith).
+Genera fotogramas de calidad (sin artefactos) de tu biblioteca local de películas, series y anime: con subtítulos, cambios de formato, comparativas entre escenas/películas y GIF/MP4 cortos. Se usa por **comandos tipo CLI** o en **lenguaje natural** (un agente LangGraph con Gemini en Vertex AI, Claude o un modelo local, trazado con LangSmith).
+
+**Demo en vivo:** [filmspotting-988884635912.us-central1.run.app](https://filmspotting-988884635912.us-central1.run.app/docs), desplegada en Cloud Run con Gemini en Vertex AI (biblioteca de demo: *Sintel* y *Big Buck Bunny*). Prueba `POST /chat` con `{"message": "el frame de Sintel donde dice 'un dragón', en vertical con subtítulos en español"}`.
+
+**Diseño:** el modelo nunca toca los vídeos. Solo traduce la intención a un comando Pydantic tipado (el mismo esquema que usa la CLI) y un ejecutor determinista lo renderiza, así que un error del modelo no puede producir un archivo roto. Si la petición es ambigua, el agente pregunta en vez de adivinar.
 
 ```
 CLI / POST /command ──parser──┐
                               ├──▶ Command (Pydantic) ──▶ executor ──▶ ffmpeg / Pillow
-POST /chat ──LangGraph+Claude─┘        (la IA solo traduce intención → comando)
+POST /chat ──LangGraph + LLM──┘        (la IA solo traduce intención → comando)
 ```
 
 ## Requisitos
@@ -99,6 +103,23 @@ Seek preciso y PNG sin pérdida; elige el fotograma más nítido (varianza del L
 - **LangChain**: `ChatAnthropic` por defecto (`claude-opus-5-5`, configurable con `FILMSPOTTING_MODEL` / `FILMSPOTTING_EFFORT`, con fallback de rechazos del lado del servidor) `ChatGoogleGenerativeAI` (API de Gemini o Vertex AI) con `FILMSPOTTING_PROVIDER=google`, o `ChatOllama` con `FILMSPOTTING_PROVIDER=ollama`. El esquema de las tools son los mismos modelos Pydantic de la CLI.
 - **LangGraph**: bucle agente↔tools, `ask_user` con `interrupt()` para desambiguar, checkpointer SQLite para seguimientos ("ahora sin subtítulos").
 - **LangSmith**: con `LANGSMITH_TRACING=true` y `LANGSMITH_API_KEY` todo `/chat` queda trazado. `uv run python evals/langsmith_dataset.py anthropic google ollama` crea el dataset NL→comando, lanza un experimento por proveedor e imprime una tabla comparativa (acierto de herramienta y de argumentos). Sin `LANGSMITH_API_KEY` corre la misma evaluación en local.
+
+## Evaluación
+
+`evals/langsmith_dataset.py` evalúa lenguaje natural → llamada a herramienta con 9 peticiones escritas a mano (en español e inglés): herramienta correcta, argumentos correctos y búsquedas extra (llamadas al modelo gastadas en `search_library` antes de actuar). Resultados con Gemini en Vertex AI y un modelo local (nov. 2026):
+
+| Modelo | Prompt del sistema | Herramienta correcta | Argumentos correctos | Búsquedas extra / petición |
+|---|---|---|---|---|
+| gemini-3.5-flash (Vertex AI) | antes | 89% | 78% | 1,22 |
+| gemini-3.5-flash (Vertex AI) | después | 89% | 78% | 0,44 |
+| qwen2.5:7b (Ollama, local) | después | 100% | 100% | 0,00 |
+
+Lo que el eval destapó por el camino:
+- **Caídas puntuadas como 0%.** La primera ejecución con la API gratuita de Gemini recibió 503 y 429 de cuota y marcó 0% de acierto. Ahora los errores de API se cuentan aparte de la calidad del modelo, y el agente cambia a `FILMSPOTTING_GOOGLE_FALLBACK_MODEL`.
+- **El eval era demasiado estricto.** Gemini busca el título antes de renderizar y luego lo referencia por `media_id`. Puntuar solo la primera llamada (22% al principio) penalizaba una estrategia válida; ahora se puntúa la acción final y las búsquedas se reportan como métrica de costo.
+- **El prompt era demasiado laxo.** Gemini buscaba antes de casi cada petición. Aclarar que las herramientas de render resuelven títulos y frases por sí mismas redujo las llamadas extra unas 3 veces sin perder precisión.
+
+Lo que aún falla con Gemini: "la escena de Breaking Bad S05E14…" se convierte en un clip sin temporada ni episodio, y "¿en qué película se dice…?" a veces acaba en una búsqueda por título en vez de por frase. Con 9 ejemplos, un solo caso mueve la nota 11 puntos: el siguiente paso es ampliar el dataset con trazas reales de `/chat` antes de sacar conclusiones entre modelos.
 
 ## Tests
 

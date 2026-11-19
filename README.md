@@ -2,12 +2,16 @@
 
 **English** | [Español](README.es.md)
 
-Generate high-quality, artifact-free stills from your local library of movies, series and anime: with subtitles, format changes, side-by-side comparisons between scenes or movies, and short GIF/MP4 clips. Use it through **CLI-style commands** or in **natural language** (Claude via LangChain + LangGraph, traced with LangSmith).
+Generate high-quality, artifact-free stills from your local library of movies, series and anime: with subtitles, format changes, side-by-side comparisons between scenes or movies, and short GIF/MP4 clips. Use it through **CLI-style commands** or in **natural language** (a LangGraph agent on Gemini via Vertex AI, Claude or a local model, traced with LangSmith).
+
+**Live demo:** [filmspotting-988884635912.us-central1.run.app](https://filmspotting-988884635912.us-central1.run.app/docs), deployed on Cloud Run with Gemini on Vertex AI (demo library: *Sintel* and *Big Buck Bunny*). Try `POST /chat` with `{"message": "the frame from Sintel where she says 'a dragon', vertical, Spanish subtitles"}`.
+
+**Design:** the model never touches the media. It only translates intent into a typed Pydantic command (the same schema the CLI uses), and a deterministic executor renders it, so a wrong guess can't produce a broken file. Ambiguous requests pause for the user instead of guessing.
 
 ```
 CLI / POST /command ──parser──┐
                               ├──▶ Command (Pydantic) ──▶ executor ──▶ ffmpeg / Pillow
-POST /chat ──LangGraph+Claude─┘        (the AI only translates intent → command)
+POST /chat ──LangGraph + LLM──┘        (the AI only translates intent → command)
 ```
 
 ## Requirements
@@ -99,6 +103,23 @@ Accurate seeking and lossless PNG output; picks the sharpest frame (variance of 
 - **LangChain**: `ChatAnthropic` by default (`claude-opus-5-5`, set with `FILMSPOTTING_MODEL` / `FILMSPOTTING_EFFORT`, server-side refusal fallback enabled) `ChatGoogleGenerativeAI` (Gemini API or Vertex AI) with `FILMSPOTTING_PROVIDER=google`, or `ChatOllama` with `FILMSPOTTING_PROVIDER=ollama`. Tool schemas are the same Pydantic models the CLI uses.
 - **LangGraph**: agent↔tools loop, `ask_user` with `interrupt()` to resolve ambiguity, and a SQLite checkpointer for follow-ups ("now without subtitles").
 - **LangSmith**: with `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, every `/chat` request is traced. `uv run python evals/langsmith_dataset.py anthropic google ollama` creates the natural-language→command dataset, runs one experiment per provider and prints a comparison table (tool accuracy and argument accuracy). Without `LANGSMITH_API_KEY` it runs the same eval locally.
+
+## Evaluation
+
+`evals/langsmith_dataset.py` scores natural language → tool call on 9 hand-written requests (Spanish and English): right tool, right arguments, and extra lookups (model round trips spent on `search_library` before acting). Results on Gemini via Vertex AI and a local model (Nov 2026):
+
+| Model | System prompt | Correct tool | Correct args | Extra lookups / request |
+|---|---|---|---|---|
+| gemini-3.5-flash (Vertex AI) | before | 89% | 78% | 1.22 |
+| gemini-3.5-flash (Vertex AI) | after | 89% | 78% | 0.44 |
+| qwen2.5:7b (Ollama, local) | after | 100% | 100% | 0.00 |
+
+What the eval caught along the way:
+- **Outages scored as 0%.** The first run on the free Gemini API hit 503s and quota 429s and reported 0% accuracy. API errors are now counted separately from model quality, and the agent fails over to `FILMSPOTTING_GOOGLE_FALLBACK_MODEL`.
+- **The eval was too strict.** Gemini looks a title up before rendering and then refers to it by `media_id`. Scoring only the first call (22% at first) penalized a valid strategy, so the eval now scores the final action and reports lookups as a cost metric instead.
+- **The prompt was too loose.** Gemini searched before almost every request. Stating that the render tools resolve titles and quotes themselves cut extra calls by about 3× with no loss in accuracy.
+
+Still failing on Gemini: "the Breaking Bad scene from S05E14…" becomes a clip without season or episode, and "which movie says…?" sometimes ends in a title lookup instead of the quote search. With 9 examples, one case moves a score by 11 points: the next step is growing the dataset from real `/chat` traces before drawing conclusions between models.
 
 ## Tests
 
